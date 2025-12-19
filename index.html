@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Clear the Channels</title>
+
+  <style>
+    :root{
+      --text:#eaf2ff;
+      --muted:#b7c7e0;
+
+      --blue1: rgba(0,180,255,.22);
+      --blue2: rgba(0,255,255,.55);
+      --red1:  rgba(0,0,0,.70);
+      --red2:  rgba(255,255,255,.18);
+
+      --glowBlue: 0 0 26px rgba(0,200,255,.85);
+      --glowRed:  0 0 22px rgba(0,0,0,.85);
+      --glowGreen:0 0 18px rgba(40,209,124,.55);
+
+      --maxW: 1400px;
+    }
+
+    *{ box-sizing:border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+
+    body{
+      margin:0;
+      min-height:100vh;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      background:#070a10;
+      color:var(--text);
+      padding:14px;
+    }
+
+    /* === Main canvas === */
+    .game{
+      position:relative;
+      width:min(var(--maxW), 100vw);
+      aspect-ratio: 16 / 9;           /* your template is 1920x1080 */
+      background: url("assets/Clear The Channels Puzzle.png") center/contain no-repeat;
+      border-radius:14px;
+      overflow:hidden;
+      box-shadow: 0 18px 60px rgba(0,0,0,.55);
+      border:1px solid rgba(255,255,255,.10);
+      user-select:none;
+    }
+
+    /* === Chamber overlays (only fill the glass “chamber”) === */
+    .chamber{
+      position:absolute;
+      border-radius:999px;
+      pointer-events:none;
+      opacity:0;
+      transition: opacity .25s ease;
+      mix-blend-mode: screen;
+    }
+
+    .chamber.active{
+      opacity:1;
+      background:
+        repeating-linear-gradient(
+          90deg,
+          rgba(0,190,255,.0) 0px,
+          rgba(0,220,255,.40) 28px,
+          rgba(0,190,255,.0) 56px
+        ),
+        linear-gradient(90deg, var(--blue1), var(--blue2));
+      box-shadow: var(--glowBlue);
+      animation: flow 1.15s linear infinite;
+    }
+
+    .chamber.clogged{
+      opacity:1;
+      mix-blend-mode: normal;
+      background:
+        radial-gradient(circle at 60% 55%, rgba(255,255,255,.35), rgba(255,255,255,0) 55%),
+        radial-gradient(circle at 35% 50%, rgba(255,255,255,.18), rgba(255,255,255,0) 55%),
+        linear-gradient(180deg, var(--red1), rgba(0,0,0,.92));
+      box-shadow: inset 0 0 28px rgba(255,255,255,.15), var(--glowRed);
+      filter: contrast(1.05);
+    }
+
+    @keyframes flow{
+      from{ background-position: 0 0, 0 0; }
+      to  { background-position: 180px 0, 0 0; }
+    }
+
+    /* === Slots (snap zones) === */
+    .slot{
+      position:absolute;
+      border-radius:10px;
+      background: rgba(255,255,255,.06);
+      border:2px dashed rgba(255,255,255,.18);
+      transition: .12s ease;
+    }
+    .slot.hover{
+      border-color: rgba(0,220,255,.85);
+      box-shadow: 0 0 18px rgba(0,220,255,.45);
+      transform: translateY(-1px);
+    }
+    .slot.filled{
+      border-style: solid;
+      border-color: rgba(255,255,255,.10);
+      background: rgba(0,0,0,.08);
+    }
+
+    /* === Status labels on the right === */
+    .status{
+      position:absolute;
+      font-weight:900;
+      letter-spacing:.6px;
+      text-transform:uppercase;
+      text-shadow: 0 3px 18px rgba(0,0,0,.8);
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.35);
+      font-size:14px;
+    }
+    .status.active{
+      border-color: rgba(0,220,255,.35);
+      background: rgba(0,220,255,.14);
+      box-shadow: var(--glowBlue);
+    }
+    .status.clogged{
+      border-color: rgba(255,90,90,.35);
+      background: rgba(255,59,59,.14);
+    }
+
+    /* === Tiles === */
+    .tile{
+      position:absolute;
+      width: 150px;
+      height: 64px;
+      background: url("assets/tile_base.png") center/contain no-repeat;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:950;
+      cursor:grab;
+      text-shadow: 0 3px 14px rgba(0,0,0,.75);
+      letter-spacing:.2px;
+      padding:8px;
+    }
+    .tile:active{ cursor:grabbing; transform: scale(.99); }
+
+    /* === Energy gauge bottom-left === */
+    .energy{
+      position:absolute;
+      left: 2.5%;
+      bottom: 3%;
+      width: 260px;
+      background: rgba(0,0,0,.55);
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:14px;
+      padding:10px 12px;
+      backdrop-filter: blur(2px);
+    }
+    .energy .title{
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.4px;
+      color: var(--muted);
+      margin-bottom:8px;
+      text-transform:uppercase;
+    }
+    .bars{ display:flex; gap:8px; }
+    .bar{
+      flex:1;
+      height:12px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.10);
+      overflow:hidden;
+      position:relative;
+    }
+    .bar.fill::after{
+      content:"";
+      position:absolute; inset:0;
+      background: linear-gradient(90deg, rgba(0,180,255,.20), rgba(0,220,255,.92));
+      box-shadow: 0 0 18px rgba(0,200,255,.65);
+    }
+    .mistakes{
+      margin-top:8px;
+      font-size:12px;
+      color: var(--muted);
+    }
+
+    /* === Win overlay === */
+    .overlay{
+      position:absolute; inset:0;
+      background: rgba(0,0,0,.72);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    }
+    .overlay.show{ display:flex; }
+
+    .modal{
+      width:min(760px, 92%);
+      background: rgba(0,0,0,.78);
+      border:1px solid rgba(255,255,255,.16);
+      border-radius:18px;
+      padding:18px 18px 16px;
+      box-shadow: 0 20px 70px rgba(0,0,0,.7);
+      backdrop-filter: blur(3px);
+    }
+    .modal h2{ margin:0 0 10px; }
+    .modal p{ margin:0 0 14px; color: var(--muted); line-height:1.35; }
+
+    .btn{
+      display:inline-flex;
+      padding:10px 14px;
+      border-radius:12px;
+      border:1px solid rgba(0,220,255,.40);
+      background: rgba(0,220,255,.18);
+      color: var(--text);
+      font-weight:900;
+      text-decoration:none;
+      cursor:pointer;
+    }
+    .btn:active{ transform: scale(.99); }
+
+    /* Optional helper message (top center) */
+    .toast{
+      position:absolute;
+      left:50%;
+      top:2.4%;
+      transform: translateX(-50%);
+      font-size:13px;
+      color: var(--muted);
+      background: rgba(0,0,0,.45);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:999px;
+      padding:6px 10px;
+      max-width: 88%;
+      text-align:center;
+      backdrop-filter: blur(2px);
+    }
+
+    /* Supply drop zone (invisible) */
+    .supplyZone{
+      position:absolute;
+      left:0; top:0;
+      width:100%;
+      height: 18%;
+      /* for debugging: background: rgba(255,255,255,.05); */
+    }
+/* Layering */
+.chamber { z-index: 10; }
+.slot    { z-index: 20; }
+.status  { z-index: 30; }
+.tile    { z-index: 40; }
+.energy  { z-index: 50; }
+.toast   { z-index: 60; }
+
+/* Overlay must be highest */
+.overlay { z-index: 9999; }
+
+  </style>
+</head>
+
+<body>
+  <div class="game" id="game">
+    <div class="supplyZone" id="supplyZone"></div>
+
+    <div class="toast" id="toast">Drag tiles into the two boxes next to a channel. Drag back up to remove.</div>
+
+    <div class="energy">
+      <div class="title">Energy Level (resets on 3rd mistake)</div>
+      <div class="bars" id="bars">
+        <div class="bar fill"></div>
+        <div class="bar fill"></div>
+        <div class="bar fill"></div>
+      </div>
+      <div class="mistakes" id="mistakesText">Mistakes: 0 / 3</div>
+    </div>
+
+    <div class="overlay" id="overlay">
+      <div class="modal">
+        <h2>Cooling Channels Activated</h2>
+        <p><strong>Report back to Solara</strong> that you have activated all the cooling channels.</p>
+        <a class="btn" id="nextBtn" href="#" target="_blank" rel="noopener">Continue</a>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // =======================
+  // 1) CHEM CONFIG
+  // =======================
+  const TILE_IDS = ["CuSO4","Na2SO4","AgNO3","Pb(NO3)2","BaCl2","NaOH","Na3PO4","Na2CO3"];
+
+  const ALLOWED = new Set([
+    k("BaCl2","NaOH"),
+    k("Na2SO4","NaOH"),
+    k("Na2SO4","Na2CO3"),
+    k("Na2SO4","Na3PO4"),
+    k("Na2SO4","CuSO4"),
+    k("AgNO3","Pb(NO3)2"),
+    k("NaOH","Na2CO3"),
+    k("NaOH","Na3PO4"),
+    k("Na2CO3","Na3PO4"),
+  ]);
+
+  // =======================
+  // 2) LAYOUT MAP (percent based)
+  // These were tuned to your 1920x1080 template.
+  // If you want tiny adjustments, change numbers by 0.5–1.
+  // =======================
+  const CHANNELS = [
+    {
+      id:0,
+      chamber:{ x:45.5, y:25, w:24, h:8 },
+      slots:[
+        { x:14,  y:24.5, w:10, h:8.5 },
+        { x:26.7, y:24.5, w:10, h:8.5 }
+      ],
+      label:{ x:83, y:26 }
+    },
+    {
+      id:1,
+      chamber:{ x:45.5, y:39.5, w:24, h:8 },
+      slots:[
+        { x:14,  y:39.1, w:10, h:8.5 },
+        { x:26.7, y:39.1, w:10, h:8.5 }
+      ],
+      label:{ x:83, y:40.5 }
+    },
+    {
+      id:2,
+      chamber:{ x:45.5, y:54, w:24, h:8 },
+      slots:[
+        { x:14,  y:53, w:10, h:8.5 },
+        { x:26.7, y:53, w:10, h:8.5 }
+      ],
+      label:{ x:83, y:55 }
+    },
+    {
+      id:3,
+      chamber:{ x:45.5, y:68.5, w:24, h:8 },
+      slots:[
+        { x:14,  y:68.5, w:10, h:8.5 },
+        { x:26.7, y:68.5, w:10, h:8.5 }
+      ],
+      label:{ x:83, y:69.5 }
+    }
+  ];
+
+  // Tile “home” positions (top row). These are % positions within the game canvas.
+  const TILE_HOME = [
+    { x: 10, y: 5 },
+    { x: 23, y: 5 },
+    { x: 36, y: 5 },
+    { x: 49, y: 5 },
+    { x: 62, y: 5 },
+    { x: 75, y: 5 },
+    { x: 22, y: 11 },
+    { x: 49, y: 11 }
+  ];
+
+  // =======================
+  // 3) STATE
+  // =======================
+  const game = document.getElementById("game");
+  const toastEl = document.getElementById("toast");
+  const overlayEl = document.getElementById("overlay");
+  const supplyZone = document.getElementById("supplyZone");
+
+  let mistakes = 0;
+
+  // channelSlots[channelId] = [tileId|null, tileId|null]
+  let channelSlots = Array.from({length:4}, ()=>[null,null]);
+  // channelState: inactive|active|clogged
+  let channelState = Array(4).fill("inactive");
+
+  // tilePlacement[tileId] = { ch, slot } or null
+  const tilePlacement = Object.fromEntries(TILE_IDS.map(id => [id, null]));
+
+  // Drag context
+  let draggingTileId = null;
+
+  // =======================
+  // 4) BUILD UI ELEMENTS (chambers, slots, labels, tiles)
+  // =======================
+  buildChannels();
+  buildTiles();
+  updateEnergy();
+
+  // Supply zone accepts drops to return tile home
+  supplyZone.addEventListener("dragover", (e)=> e.preventDefault());
+  supplyZone.addEventListener("drop", (e)=>{
+    e.preventDefault();
+    if(!draggingTileId) return;
+    returnTileHome(draggingTileId);
+    draggingTileId = null;
+  });
+
+  // =======================
+  // BUILDERS
+  // =======================
+  function buildChannels(){
+    CHANNELS.forEach(ch=>{
+      // Chamber overlay
+      const chamber = el("div","chamber");
+      chamber.id = `chamber-${ch.id}`;
+      placePct(chamber, ch.chamber);
+      game.appendChild(chamber);
+
+      // Slots
+      ch.slots.forEach((s, idx)=>{
+        const slot = el("div","slot");
+        slot.id = `slot-${ch.id}-${idx}`;
+        slot.dataset.channel = String(ch.id);
+        slot.dataset.slot = String(idx);
+        placePct(slot, s);
+        slot.addEventListener("dragover", onSlotDragOver);
+        slot.addEventListener("dragleave", onSlotDragLeave);
+        slot.addEventListener("drop", onSlotDrop);
+        game.appendChild(slot);
+      });
+
+      // Status label
+      const label = el("div","status");
+      label.id = `status-${ch.id}`;
+      label.textContent = "INACTIVE";
+      label.style.left = ch.label.x + "%";
+      label.style.top  = ch.label.y + "%";
+      game.appendChild(label);
+    });
+  }
+
+  function buildTiles(){
+    TILE_IDS.forEach((id, i)=>{
+      const tile = el("div","tile");
+      tile.id = `tile-${id}`;
+      tile.textContent = pretty(id);
+      tile.draggable = true;
+
+      // Home position
+      tile.dataset.homeX = TILE_HOME[i].x;
+      tile.dataset.homeY = TILE_HOME[i].y;
+      tile.style.left = TILE_HOME[i].x + "%";
+      tile.style.top  = TILE_HOME[i].y + "%";
+
+      tile.addEventListener("dragstart", (e)=>{
+        draggingTileId = id;
+        e.dataTransfer.setData("text/plain", id);
+      });
+
+      game.appendChild(tile);
+    });
+  }
+
+  // =======================
+  // DRAG/DROP HANDLERS
+  // =======================
+  function onSlotDragOver(e){
+    e.preventDefault();
+    const slot = e.currentTarget;
+    const ch = Number(slot.dataset.channel);
+    const idx = Number(slot.dataset.slot);
+
+    // If slot already filled by some other tile, don't highlight
+    if(channelSlots[ch][idx] !== null && channelSlots[ch][idx] !== draggingTileId) return;
+
+    slot.classList.add("hover");
+  }
+
+  function onSlotDragLeave(e){
+    e.currentTarget.classList.remove("hover");
+  }
+
+  function onSlotDrop(e){
+    e.preventDefault();
+    const slot = e.currentTarget;
+    slot.classList.remove("hover");
+
+    const tileId = e.dataTransfer.getData("text/plain");
+    if(!tileId) return;
+
+    const ch = Number(slot.dataset.channel);
+    const idx = Number(slot.dataset.slot);
+
+    // If target slot occupied by a different tile, ignore
+    if(channelSlots[ch][idx] !== null && channelSlots[ch][idx] !== tileId) return;
+
+    placeTileInSlot(tileId, ch, idx);
+    draggingTileId = null;
+  }
+
+  // =======================
+  // PLACEMENT + GAME LOGIC
+  // =======================
+  function placeTileInSlot(tileId, ch, idx){
+    // If tile was already placed somewhere else, clear that old slot
+    const prev = tilePlacement[tileId];
+    if(prev){
+      channelSlots[prev.ch][prev.slot] = null;
+      markSlotFilled(prev.ch, prev.slot, false);
+      // When any tile removed from a channel: channel becomes INACTIVE immediately
+      setChannelState(prev.ch, "inactive");
+    }
+
+    // Put into new slot
+    channelSlots[ch][idx] = tileId;
+    tilePlacement[tileId] = { ch, slot: idx };
+
+    // Move tile to slot center
+    snapTileToSlot(tileId, ch, idx);
+    markSlotFilled(ch, idx, true);
+
+    // Since channel is editable even after clogging, we re-evaluate every time both slots are filled
+    const [a,b] = channelSlots[ch];
+    if(a && b){
+      evaluateChannel(ch, a, b);
+    } else {
+      // If only one tile is in, keep it INACTIVE visually
+      setChannelState(ch, "inactive");
+    }
+  }
+
+  function evaluateChannel(ch, a, b){
+    const ok = ALLOWED.has(k(a,b));
+    if(ok){
+      setChannelState(ch, "active");
+      toast(`✅ Channel ${ch+1} ACTIVE: ${pretty(a)} + ${pretty(b)} (no precipitate)`);
+      checkWin();
+    } else {
+      setChannelState(ch, "clogged");
+      mistakes++;
+      updateEnergy();
+      toast(`❌ Channel ${ch+1} CLOGGED: ${pretty(a)} + ${pretty(b)} (precipitate formed)`);
+
+      if(mistakes >= 3){
+        setTimeout(resetAll, 600);
+      }
+    }
+  }
+
+  function returnTileHome(tileId){
+    const prev = tilePlacement[tileId];
+    if(prev){
+      // Clear previous slot
+      channelSlots[prev.ch][prev.slot] = null;
+      markSlotFilled(prev.ch, prev.slot, false);
+      tilePlacement[tileId] = null;
+
+      // Channel becomes INACTIVE immediately after removal (your requirement)
+      setChannelState(prev.ch, "inactive");
+    }
+
+    // Move to home position
+    const tile = document.getElementById(`tile-${tileId}`);
+    tile.style.left = tile.dataset.homeX + "%";
+    tile.style.top  = tile.dataset.homeY + "%";
+
+    toast(`↩️ Returned ${pretty(tileId)} to supply.`);
+  }
+
+  function snapTileToSlot(tileId, ch, idx){
+    const tile = document.getElementById(`tile-${tileId}`);
+    const slotBox = CHANNELS[ch].slots[idx];
+
+    // Center the tile within the slot box
+    // tile width/height are in px; we’ll approximate a good center by using percentages + translate.
+    tile.style.left = (slotBox.x + slotBox.w/2) + "%";
+    tile.style.top  = (slotBox.y + slotBox.h/2) + "%";
+    tile.style.transform = "translate(-50%, -50%)";
+  }
+
+  function markSlotFilled(ch, idx, filled){
+    const slot = document.getElementById(`slot-${ch}-${idx}`);
+    slot.classList.toggle("filled", filled);
+  }
+
+  function setChannelState(ch, state){
+    channelState[ch] = state;
+
+    // chamber overlay
+    const chamber = document.getElementById(`chamber-${ch}`);
+    chamber.classList.remove("active","clogged");
+    chamber.style.opacity = "0";
+
+    if(state === "active"){
+      chamber.classList.add("active");
+      chamber.style.opacity = "1";
+    } else if(state === "clogged"){
+      chamber.classList.add("clogged");
+      chamber.style.opacity = "1";
+    }
+
+    // label on right
+    const label = document.getElementById(`status-${ch}`);
+    label.classList.remove("active","clogged");
+    if(state === "inactive"){
+      label.textContent = "INACTIVE";
+    }
+    if(state === "active"){
+      label.textContent = "ACTIVE";
+      label.classList.add("active");
+    }
+    if(state === "clogged"){
+      label.textContent = "CLOGGED";
+      label.classList.add("clogged");
+    }
+
+    // Important: if we force inactive, we should clear chamber overlay immediately
+    if(state === "inactive"){
+      // nothing else needed; chamber is hidden above
+    }
+
+    // If state changed to inactive, but a tile might be centered with transform,
+    // keep transform consistent (we always use translate when snapped).
+    // When returning home, we remove transform below.
+    if(state === "inactive"){
+      // no-op
+    }
+  }
+
+  function checkWin(){
+    if(channelState.every(s => s === "active")){
+      overlayEl.classList.add("show");
+    }
+  }
+
+  function resetAll(){
+    toast("⚠️ Third mistake reached — system resetting…");
+    overlayEl.classList.remove("show");
+
+    // Reset counters
+    mistakes = 0;
+    updateEnergy();
+
+    // Reset channel states and slots
+    channelSlots = Array.from({length:4}, ()=>[null,null]);
+    channelState = Array(4).fill("inactive");
+
+    // Reset UI chambers + labels + slot styles
+    for(let ch=0; ch<4; ch++){
+      setChannelState(ch, "inactive");
+      for(let s=0; s<2; s++){
+        markSlotFilled(ch, s, false);
+      }
+    }
+
+    // Return all tiles home
+    TILE_IDS.forEach(id=>{
+      tilePlacement[id] = null;
+      const tile = document.getElementById(`tile-${id}`);
+      tile.style.transform = ""; // remove translate used when snapped
+      tile.style.left = tile.dataset.homeX + "%";
+      tile.style.top  = tile.dataset.homeY + "%";
+    });
+  }
+
+  // =======================
+  // ENERGY UI
+  // =======================
+  function updateEnergy(){
+    const bars = [...document.querySelectorAll("#bars .bar")];
+    const filled = Math.max(0, 3 - mistakes);
+    bars.forEach((b,i)=> b.classList.toggle("fill", i < filled));
+    document.getElementById("mistakesText").textContent = `Mistakes: ${mistakes} / 3`;
+  }
+
+  // =======================
+  // HELPERS
+  // =======================
+  function k(a,b){ return [a,b].sort().join("|"); }
+
+  function el(tag, cls){
+    const d = document.createElement(tag);
+    if(cls) d.className = cls;
+    return d;
+  }
+
+  function placePct(node, box){
+    node.style.left   = box.x + "%";
+    node.style.top    = box.y + "%";
+    node.style.width  = box.w + "%";
+    node.style.height = box.h + "%";
+  }
+
+  function toast(msg){
+    toastEl.textContent = msg;
+  }
+
+  function pretty(s){
+    // unicode subscripts for digits
+    const map = {"0":"₀","1":"₁","2":"₂","3":"₃","4":"₄","5":"₅","6":"₆","7":"₇","8":"₈","9":"₉"};
+    return s.replace(/\d/g, d => map[d] || d);
+  }
+
+  // Placeholder “Continue” link target
+  document.getElementById("nextBtn").addEventListener("click", (e)=>{
+    if(e.currentTarget.getAttribute("href") === "#"){
+      e.preventDefault();
+      alert("Link target not set yet. Replace the button href with your website URL when ready.");
+    }
+  });
+</script>
+</body>
+</html>
